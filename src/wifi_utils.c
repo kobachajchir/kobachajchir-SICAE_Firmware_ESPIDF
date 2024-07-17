@@ -1,9 +1,11 @@
 #include <globals.h>
 #include "wifi_utils.h"
+#include "lcd_utils.h"
 
-static const char *TAG = "wifi station";
+static const char *TAG = "wifi";
 EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
+
 
 static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
@@ -55,6 +57,10 @@ void wifi_init_softap(void) {
 
     ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s password:%s",
              CONFIG_SOFTAP_SSID, CONFIG_SOFTAP_PASSWORD);
+    lcd_put_cur(0, 0); // Move cursor to the beginning of the first line
+    lcd_send_string("AP CONNECTED");
+    lcd_put_cur(1, 0); // Move cursor to the beginning of the second line
+    lcd_send_string("AP IP");
 }
 
 void wifi_init_sta(void) {
@@ -103,6 +109,10 @@ void wifi_init_sta(void) {
     if (bits & WIFI_CONNECTED_BIT) {
         ESP_LOGI(TAG, "connected to ap SSID:%s password:%s",
                  CONFIG_ESP_WIFI_SSID, CONFIG_ESP_WIFI_PASSWORD);
+        lcd_put_cur(0, 0); // Move cursor to the beginning of the first line
+        lcd_send_string("WIFI CONNECTED");
+        lcd_put_cur(1, 0); // Move cursor to the beginning of the second line
+        lcd_send_string("ESP IP");
     } else if (bits & WIFI_FAIL_BIT) {
         ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
                  CONFIG_ESP_WIFI_SSID, CONFIG_ESP_WIFI_PASSWORD);
