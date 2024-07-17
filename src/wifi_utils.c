@@ -57,7 +57,7 @@ void wifi_init_softap(void) {
     ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s password:%s",
              CONFIG_SOFTAP_SSID, CONFIG_SOFTAP_PASSWORD);
     lcd_put_cur(0, 0); // Move cursor to the beginning of the first line
-    lcd_send_string("AP CONNECTED");
+    lcd_send_string("AP CREADO");
     lcd_put_cur(1, 0); // Move cursor to the beginning of the second line
     lcd_send_string("AP IP");
 }
@@ -109,7 +109,7 @@ void wifi_init_sta(void) {
         ESP_LOGI(TAG, "connected to ap SSID:%s password:%s",
                  CONFIG_ESP_WIFI_SSID, CONFIG_ESP_WIFI_PASSWORD);
         lcd_put_cur(0, 0); // Move cursor to the beginning of the first line
-        lcd_send_string("WIFI CONNECTED");
+        lcd_send_string("WIFI CONECTADO");
         lcd_put_cur(1, 0); // Move cursor to the beginning of the second line
         lcd_send_string("ESP IP");
     } else if (bits & WIFI_FAIL_BIT) {
@@ -117,6 +117,8 @@ void wifi_init_sta(void) {
                  CONFIG_ESP_WIFI_SSID, CONFIG_ESP_WIFI_PASSWORD);
         // Start SoftAP
         ESP_LOGI(TAG, "Starting SoftAP");
+        lcd_put_cur(0, 0); // Move cursor to the beginning of the first line
+        lcd_send_string("CREANDO AP");
         wifi_init_softap();
     } else {
         ESP_LOGE(TAG, "UNEXPECTED EVENT");

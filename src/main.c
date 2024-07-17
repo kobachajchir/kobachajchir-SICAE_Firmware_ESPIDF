@@ -2,13 +2,21 @@
 #include <globals.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/event_groups.h"
 #include "driver/i2c.h"
+#include "esp_system.h"
+#include "esp_wifi.h"
+#include "esp_event.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
+#include "esp_mac.h"
+#include "lwip/err.h"
+#include "lwip/sys.h"
 #include <unistd.h>
 #include "lcd_utils.h" // Include the header for LCD functions
 #include "wifi_utils.h" // Include the header for WiFi functions
 
-static const char *TAG = "i2c_lcd";
+static const char *TAG = "main";
 
 static esp_err_t i2c_master_init(void) {
     i2c_config_t conf = {
@@ -26,18 +34,19 @@ static esp_err_t i2c_master_init(void) {
 }
 
 void app_main(void) {
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+      ESP_ERROR_CHECK(nvs_flash_erase());
+      ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
     ESP_ERROR_CHECK(i2c_master_init());
     ESP_LOGI(TAG, "I2C initialized successfully");
 
     lcd_init();
     ESP_LOGI(TAG, "LCD initialized successfully");
-
+    lcd_put_cur(0, 0); // Move cursor to the beginning of the first line
+    lcd_send_string("INICIANDO");
     wifi_init_sta();
     ESP_LOGI(TAG, "WiFi initialized successfully");
-
-    lcd_put_cur(0, 0); // Move cursor to the beginning of the first line
-    lcd_send_string("Hello World!");
-
-    lcd_put_cur(1, 0); // Move cursor to the beginning of the second line
-    lcd_send_string("from ESP32");
 }
