@@ -3,6 +3,13 @@
     "esp_log.h": "c",
     "i2c.h": "c",
     "sys.h": "c",
-    "nvs_flash.h": "c"
+    "stdio.h": "c",
+    "unistd.h": "c",
+    "task.h": "c",
+    "freertos.h": "c",
+    "lcd_utils.h": "c",
+    "esp_err.h": "c",
+    "globals.h": "c",
+    "wifi_utils.h": "c"
   }
 }
