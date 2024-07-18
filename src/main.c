@@ -1,3 +1,4 @@
+#include <inttypes.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -7,154 +8,121 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-#include "esp_mac.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
+#include "driver/gpio.h"
+#include "globals.h"
 
-/* WiFi Configuration */
-#define CONFIG_ESP_WIFI_SSID "Koba"
-#define CONFIG_ESP_WIFI_PASSWORD "koba1254"
-#define CONFIG_ESP_MAXIMUM_RETRY 5
+myByte btnFlag = {0};
+myByte btnFlag2 = {0};
 
-#define CONFIG_SOFTAP_SSID "ESP32AP"
-#define CONFIG_SOFTAP_PASSWORD "ap123456"
-#define CONFIG_SOFTAP_CHANNEL 1
-#define CONFIG_MAX_STA_CONN 4
+static uint32_t lastTime = 0;
+static uint32_t btnEnterDuration = 0;
+static uint32_t btnUpDuration = 0;
+static uint32_t btnDownDuration = 0;
 
-/* FreeRTOS event group to signal when we are connected */
-static EventGroupHandle_t s_wifi_event_group;
+static const char *TAG = "button_handler";
 
-/* The event group allows multiple bits for each event, but we only care about two events:
- * - we are connected to the AP with an IP
- * - we failed to connect after the maximum amount of retries */
-#define WIFI_CONNECTED_BIT BIT0
-#define WIFI_FAIL_BIT      BIT1
+void init_gpio() {
+    gpio_config_t io_conf;
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pin_bit_mask = (1ULL << PIN_BTN_UP) | (1ULL << PIN_BTN_DOWN) | (1ULL << PIN_BTN_ENTER);
+    io_conf.pull_down_en = 0; // Disable internal pull-down resistors
+    io_conf.pull_up_en = 0;   // Disable internal pull-up resistors
+    gpio_config(&io_conf);
+}
 
-void wifi_init_softap(void);
-void wifi_init_sta(void);
-static void event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
+bool debounce(int pin) {
+    int count = 0;
+    const int sample_count = 10; // Reduced sample count to 10
+    const int debounce_delay = 10; // Reduced delay to 10 ms
 
-static const char *TAG = "wifi station";
-
-static int s_retry_num = 0;
-
-static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
-    if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        if (s_retry_num < CONFIG_ESP_MAXIMUM_RETRY) {
-            esp_wifi_connect();
-            s_retry_num++;
-            ESP_LOGI(TAG, "retry to connect to the AP");
-        } else {
-            xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
+    for (int i = 0; i < sample_count; i++) {
+        int pin_state = gpio_get_level(pin); // Get the raw pin state
+        if (pin_state == 1) { // Check for high level (button pressed)
+            count++;
         }
-        ESP_LOGI(TAG,"connect to the AP fail");
-    } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
-        ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->ip_info.ip));
-        s_retry_num = 0;
-        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STACONNECTED) {
-        wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *) event_data;
-        ESP_LOGI(TAG, "station " MACSTR " joined, AID=%d", MAC2STR(event->mac), event->aid);
-    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STADISCONNECTED) {
-        wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *) event_data;
-        ESP_LOGI(TAG, "station " MACSTR " left, AID=%d, reason:%d", MAC2STR(event->mac), event->aid, event->reason);
+        vTaskDelay(pdMS_TO_TICKS(debounce_delay)); // Delay for 10 ms
+    }
+    bool result = count > (sample_count / 2); // Return true if the pin reads high more than half the time
+    //ESP_LOGI(TAG, "Debounce result for pin %d: %d", pin, result);
+    return result;
+}
+
+void check_buttons() {
+    uint32_t currentTime = xTaskGetTickCount() * portTICK_PERIOD_MS;
+
+    // BTN ENTER
+    if (debounce(PIN_BTN_ENTER) && !BTN_ENTER_PRESSED) {
+        BTN_ENTER_PRESSED = 1;
+        btnEnterDuration = currentTime;
+        ESP_LOGI(TAG, "BTN_ENTER Pressed");
+    } else if (!debounce(PIN_BTN_ENTER) && BTN_ENTER_PRESSED) {
+        BTN_ENTER_PRESSED = 0;
+        if ((currentTime - btnEnterDuration) >= BTN_PRESS_TIME && (currentTime - btnEnterDuration) < BTN_LONGPRESS_TIME) {
+            ESP_LOGI(TAG, "BTN_ENTER shortpress");
+            BTN_ENTER_RELEASED = 1;
+        }else if ((currentTime - btnEnterDuration) >= BTN_LONGPRESS_TIME) {
+            ESP_LOGI(TAG, "BTN_ENTER longpress");
+            BTN_ENTER_RELEASED_LONGPRESS = 1;
+        }
+        btnEnterDuration = 0;
+    }
+
+    // BTN UP
+    if (debounce(PIN_BTN_UP) && !BTN_UP_PRESSED) {
+        BTN_UP_PRESSED = 1;
+        btnUpDuration = currentTime;
+        ESP_LOGI(TAG, "BTN_UP Pressed");
+    } else if (!debounce(PIN_BTN_UP) && BTN_UP_PRESSED) {
+        BTN_UP_PRESSED = 0;
+        if ((currentTime - btnUpDuration) >= BTN_PRESS_TIME && (currentTime - btnUpDuration) < BTN_LONGPRESS_TIME) {
+            ESP_LOGI(TAG, "BTN_UP shortpress");
+            BTN_UP_RELEASED = 1;
+        }else if ((currentTime - btnUpDuration) >= BTN_LONGPRESS_TIME) {
+            ESP_LOGI(TAG, "BTN_UP longpress");
+            BTN_UP_RELEASED_LONGPRESS = 1;
+        }
+        btnUpDuration = 0;
+    }
+
+    // BTN DOWN
+    if (debounce(PIN_BTN_DOWN) && !BTN_DOWN_PRESSED) {
+        BTN_DOWN_PRESSED = 1;
+        btnDownDuration = currentTime;
+        ESP_LOGI(TAG, "BTN_DOWN Pressed");
+    } else if (!debounce(PIN_BTN_DOWN) && BTN_DOWN_PRESSED) {
+        BTN_DOWN_PRESSED = 0;
+        if ((currentTime - btnDownDuration) >= BTN_PRESS_TIME && (currentTime - btnDownDuration) < BTN_LONGPRESS_TIME) {
+            ESP_LOGI(TAG, "BTN_DOWN shortpress");
+            BTN_DOWN_RELEASED = 1;
+        }else if ((currentTime - btnDownDuration) >= BTN_LONGPRESS_TIME) {
+            ESP_LOGI(TAG, "BTN_DOWN longpress");
+            BTN_DOWN_RELEASED_LONGPRESS = 1;
+        }
+        btnDownDuration = 0;
     }
 }
 
-void wifi_init_softap(void) {
-    esp_netif_create_default_wifi_ap();
-
-    wifi_config_t wifi_config = {
-        .ap = {
-            .ssid = CONFIG_SOFTAP_SSID,
-            .ssid_len = strlen(CONFIG_SOFTAP_SSID),
-            .password = CONFIG_SOFTAP_PASSWORD,
-            .channel = CONFIG_SOFTAP_CHANNEL,
-            .max_connection = CONFIG_MAX_STA_CONN,
-            .authmode = WIFI_AUTH_WPA2_PSK
-        },
-    };
-
-    if (strlen(CONFIG_SOFTAP_PASSWORD) == 0) {
-        wifi_config.ap.authmode = WIFI_AUTH_OPEN;
-    }
-
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
-
-    ESP_LOGI(TAG, "wifi_init_softap finished. SSID:%s password:%s",
-             CONFIG_SOFTAP_SSID, CONFIG_SOFTAP_PASSWORD);
-}
-
-void wifi_init_sta(void) {
-    s_wifi_event_group = xEventGroupCreate();
-
-    ESP_ERROR_CHECK(esp_netif_init());
-
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    esp_netif_create_default_wifi_sta();
-
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-
-    esp_event_handler_instance_t instance_any_id;
-    esp_event_handler_instance_t instance_got_ip;
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
-                                                        ESP_EVENT_ANY_ID,
-                                                        &event_handler,
-                                                        NULL,
-                                                        &instance_any_id));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
-                                                        IP_EVENT_STA_GOT_IP,
-                                                        &event_handler,
-                                                        NULL,
-                                                        &instance_got_ip));
-
-    wifi_config_t wifi_config = {
-        .sta = {
-            .ssid = CONFIG_ESP_WIFI_SSID,
-            .password = CONFIG_ESP_WIFI_PASSWORD,
-            .threshold.authmode = WIFI_AUTH_WPA2_PSK,
-        },
-    };
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA) );
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config) );
-    ESP_ERROR_CHECK(esp_wifi_start() );
-
-    ESP_LOGI(TAG, "wifi_init_sta finished.");
-
-    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
-            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
-            pdFALSE,
-            pdFALSE,
-            portMAX_DELAY);
-
-    if (bits & WIFI_CONNECTED_BIT) {
-        ESP_LOGI(TAG, "connected to ap SSID:%s password:%s",
-                 CONFIG_ESP_WIFI_SSID, CONFIG_ESP_WIFI_PASSWORD);
-    } else if (bits & WIFI_FAIL_BIT) {
-        ESP_LOGI(TAG, "Failed to connect to SSID:%s, password:%s",
-                 CONFIG_ESP_WIFI_SSID, CONFIG_ESP_WIFI_PASSWORD);
-        // Start SoftAP
-        ESP_LOGI(TAG, "Starting SoftAP");
-        wifi_init_softap();
-    } else {
-        ESP_LOGE(TAG, "UNEXPECTED EVENT");
+void button_task(void *arg) {
+    while (1) {
+        check_buttons();
+        vTaskDelay(pdMS_TO_TICKS(100)); // Adjust delay for main loop to 100 ms
     }
 }
 
 void app_main(void) {
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-      ESP_ERROR_CHECK(nvs_flash_erase());
-      ret = nvs_flash_init();
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
 
-    ESP_LOGI(TAG, "ESP_WIFI_MODE_STA");
-    wifi_init_sta();
+    ESP_LOGI(TAG, "Initializing GPIO...");
+    init_gpio();
+    ESP_LOGI(TAG, "GPIO Initialized with external pull-down resistors");
+
+    xTaskCreate(button_task, "button_task", 2048, NULL, 10, NULL);
 }
