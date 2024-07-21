@@ -28,6 +28,8 @@ static uint32_t btnEnterDuration = 0;
 static uint32_t btnUpDuration = 0;
 static uint32_t btnDownDuration = 0;
 
+char linea[16];
+
 void init_gpio() {
     gpio_config_t io_conf;
     io_conf.intr_type = GPIO_INTR_DISABLE;

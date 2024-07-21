@@ -76,4 +76,6 @@ extern EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
 
+extern char linea[16];
+
 #endif // GLOBALS_H
